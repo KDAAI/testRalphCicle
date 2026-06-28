@@ -1,6 +1,7 @@
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
+import time
 import unittest
 
 from storage import NotesStore, normalize_tags
@@ -30,6 +31,38 @@ class NotesStoreTest(unittest.TestCase):
 
                 store.delete_note(note_id)
                 self.assertEqual(store.list_notes(), [])
+            finally:
+                store.close()
+
+    def test_notes_return_metadata_and_sort_by_pin_then_modified_time(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            store = NotesStore(Path(temp_dir) / "notes.db")
+            try:
+                first_id = store.create_note("First", "Body", "Work; Ideas")
+                time.sleep(0.01)
+                second_id = store.create_note("Second", "Body", "Ideas")
+
+                first = store.get_note(first_id)
+                self.assertIsNotNone(first)
+                self.assertEqual(first.tags, "Work, Ideas")
+                self.assertFalse(first.pinned)
+                self.assertTrue(first.created_at)
+                self.assertEqual(first.created_at, first.updated_at)
+
+                time.sleep(0.01)
+                store.update_note(first_id, "First", "Body", "Work; Ideas", pinned=True)
+                pinned = store.get_note(first_id)
+                self.assertIsNotNone(pinned)
+                self.assertTrue(pinned.pinned)
+                self.assertGreater(pinned.updated_at, pinned.created_at)
+
+                notes = store.list_notes()
+                self.assertEqual([note.id for note in notes], [first_id, second_id])
+
+                time.sleep(0.01)
+                store.update_note(second_id, "Second updated", "Body", "Ideas")
+                notes = store.list_notes()
+                self.assertEqual([note.id for note in notes], [first_id, second_id])
             finally:
                 store.close()
 

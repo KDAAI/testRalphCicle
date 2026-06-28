@@ -8,12 +8,12 @@ Update the storage-facing note model and core CRUD behavior so all note reads an
 
 ## Acceptance criteria
 
-- [ ] `create_note`, `update_note`, `get_note`, `delete_note`, and `list_notes` work with the upgraded note model.
-- [ ] Creating a note stores normalized tags through the tag relationship tables.
-- [ ] Updating title, body, tags, or pin state updates the modification timestamp.
-- [ ] Listing notes sorts pinned notes first, then by newest modification date, with stable fallback ordering.
-- [ ] Returned note data includes title, body, tags, pin state, created date, and modified date.
-- [ ] Storage tests cover sorting, timestamps, and user-visible tag round-tripping.
+- [x] `create_note`, `update_note`, `get_note`, `delete_note`, and `list_notes` work with the upgraded note model.
+- [x] Creating a note stores normalized tags through the tag relationship tables.
+- [x] Updating title, body, tags, or pin state updates the modification timestamp.
+- [x] Listing notes sorts pinned notes first, then by newest modification date, with stable fallback ordering.
+- [x] Returned note data includes title, body, tags, pin state, created date, and modified date.
+- [x] Storage tests cover sorting, timestamps, and user-visible tag round-tripping.
 
 ## Blocked by
 

@@ -16,6 +16,9 @@ class Note:
     title: str
     body: str
     tags: str
+    created_at: str
+    updated_at: str
+    pinned: bool
 
 
 def normalize_tags(value: str) -> str:
@@ -108,7 +111,7 @@ class NotesStore:
             self._sync_note_tags(note_id, normalized_tags)
 
     def list_notes(self, search: str = "", tag: str | None = None) -> list[Note]:
-        query = "SELECT id, title, body, tags FROM notes"
+        query = "SELECT id, title, body, tags, created_at, updated_at, pinned FROM notes"
         clauses: list[str] = []
         params: list[str] = []
 
@@ -121,7 +124,7 @@ class NotesStore:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
 
-        query += " ORDER BY lower(title), id DESC"
+        query += " ORDER BY pinned DESC, updated_at DESC, id DESC"
         rows = self.connection.execute(query, params).fetchall()
         notes = [self._row_to_note(row) for row in rows]
 
@@ -137,31 +140,44 @@ class NotesStore:
 
     def get_note(self, note_id: int) -> Note | None:
         row = self.connection.execute(
-            "SELECT id, title, body, tags FROM notes WHERE id = ?",
+            "SELECT id, title, body, tags, created_at, updated_at, pinned FROM notes WHERE id = ?",
             (note_id,),
         ).fetchone()
         return self._row_to_note(row) if row else None
 
-    def create_note(self, title: str, body: str, tags: str) -> int:
+    def create_note(self, title: str, body: str, tags: str, pinned: bool = False) -> int:
         title = title.strip() or "Без названия"
         normalized_tags = normalize_tags(tags)
         now = self._now()
         cursor = self.connection.execute(
-            "INSERT INTO notes (title, body, tags, created_at, updated_at, pinned) VALUES (?, ?, ?, ?, ?, 0)",
-            (title, body, normalized_tags, now, now),
+            "INSERT INTO notes (title, body, tags, created_at, updated_at, pinned) VALUES (?, ?, ?, ?, ?, ?)",
+            (title, body, normalized_tags, now, now, int(pinned)),
         )
         self._sync_note_tags(int(cursor.lastrowid), normalized_tags)
         self.connection.commit()
         return int(cursor.lastrowid)
 
-    def update_note(self, note_id: int, title: str, body: str, tags: str) -> None:
+    def update_note(
+        self,
+        note_id: int,
+        title: str,
+        body: str,
+        tags: str,
+        pinned: bool | None = None,
+    ) -> None:
         title = title.strip() or "Без названия"
         normalized_tags = normalize_tags(tags)
         now = self._now()
-        self.connection.execute(
-            "UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?",
-            (title, body, normalized_tags, now, note_id),
-        )
+        if pinned is None:
+            self.connection.execute(
+                "UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?",
+                (title, body, normalized_tags, now, note_id),
+            )
+        else:
+            self.connection.execute(
+                "UPDATE notes SET title = ?, body = ?, tags = ?, pinned = ?, updated_at = ? WHERE id = ?",
+                (title, body, normalized_tags, int(pinned), now, note_id),
+            )
         self._sync_note_tags(note_id, normalized_tags)
         self.connection.commit()
 
@@ -208,7 +224,7 @@ class NotesStore:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
     @staticmethod
     def _row_to_note(row: sqlite3.Row) -> Note:
@@ -217,4 +233,7 @@ class NotesStore:
             title=str(row["title"]),
             body=str(row["body"]),
             tags=str(row["tags"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+            pinned=bool(row["pinned"]),
         )

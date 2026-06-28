@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -37,6 +38,7 @@ class NotesStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(self.db_path)
         self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA foreign_keys = ON")
         self._ensure_schema()
 
     def close(self) -> None:
@@ -49,11 +51,61 @@ class NotesStore:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 body TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT ''
+                tags TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                pinned INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+        self._ensure_note_column("created_at", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_note_column("updated_at", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_note_column("pinned", "INTEGER NOT NULL DEFAULT 0")
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                normalized_name TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS note_tags (
+                note_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                PRIMARY KEY (note_id, tag_id),
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+            """
+        )
+        self._migrate_existing_notes()
         self.connection.commit()
+
+    def _ensure_note_column(self, name: str, definition: str) -> None:
+        columns = {
+            str(row["name"])
+            for row in self.connection.execute("PRAGMA table_info(notes)").fetchall()
+        }
+        if name not in columns:
+            self.connection.execute(f"ALTER TABLE notes ADD COLUMN {name} {definition}")
+
+    def _migrate_existing_notes(self) -> None:
+        now = self._now()
+        self.connection.execute("UPDATE notes SET created_at = ? WHERE created_at = ''", (now,))
+        self.connection.execute("UPDATE notes SET updated_at = ? WHERE updated_at = ''", (now,))
+
+        rows = self.connection.execute("SELECT id, tags FROM notes").fetchall()
+        for row in rows:
+            normalized_tags = normalize_tags(str(row["tags"]))
+            note_id = int(row["id"])
+            self.connection.execute(
+                "UPDATE notes SET tags = ? WHERE id = ?",
+                (normalized_tags, note_id),
+            )
+            self._sync_note_tags(note_id, normalized_tags)
 
     def list_notes(self, search: str = "", tag: str | None = None) -> list[Note]:
         query = "SELECT id, title, body, tags FROM notes"
@@ -93,36 +145,70 @@ class NotesStore:
     def create_note(self, title: str, body: str, tags: str) -> int:
         title = title.strip() or "Без названия"
         normalized_tags = normalize_tags(tags)
+        now = self._now()
         cursor = self.connection.execute(
-            "INSERT INTO notes (title, body, tags) VALUES (?, ?, ?)",
-            (title, body, normalized_tags),
+            "INSERT INTO notes (title, body, tags, created_at, updated_at, pinned) VALUES (?, ?, ?, ?, ?, 0)",
+            (title, body, normalized_tags, now, now),
         )
+        self._sync_note_tags(int(cursor.lastrowid), normalized_tags)
         self.connection.commit()
         return int(cursor.lastrowid)
 
     def update_note(self, note_id: int, title: str, body: str, tags: str) -> None:
         title = title.strip() or "Без названия"
         normalized_tags = normalize_tags(tags)
+        now = self._now()
         self.connection.execute(
-            "UPDATE notes SET title = ?, body = ?, tags = ? WHERE id = ?",
-            (title, body, normalized_tags, note_id),
+            "UPDATE notes SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?",
+            (title, body, normalized_tags, now, note_id),
         )
+        self._sync_note_tags(note_id, normalized_tags)
         self.connection.commit()
 
     def delete_note(self, note_id: int) -> None:
+        self.connection.execute("DELETE FROM note_tags WHERE note_id = ?", (note_id,))
         self.connection.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        self._delete_orphan_tags()
         self.connection.commit()
 
     def list_tags(self) -> list[str]:
-        rows = self.connection.execute("SELECT tags FROM notes WHERE tags <> ''").fetchall()
-        tags_by_key: dict[str, str] = {}
+        rows = self.connection.execute("SELECT name FROM tags ORDER BY lower(name)").fetchall()
+        return [str(row["name"]) for row in rows]
 
-        for row in rows:
-            for tag in normalize_tags(row["tags"]).split(", "):
-                if tag:
-                    tags_by_key.setdefault(tag.casefold(), tag)
+    def _sync_note_tags(self, note_id: int, tags: str) -> None:
+        self.connection.execute("DELETE FROM note_tags WHERE note_id = ?", (note_id,))
+        for tag in normalize_tags(tags).split(", "):
+            if not tag:
+                continue
 
-        return sorted(tags_by_key.values(), key=str.casefold)
+            key = tag.casefold()
+            self.connection.execute(
+                "INSERT OR IGNORE INTO tags (name, normalized_name) VALUES (?, ?)",
+                (tag, key),
+            )
+            tag_row = self.connection.execute(
+                "SELECT id FROM tags WHERE normalized_name = ?",
+                (key,),
+            ).fetchone()
+            self.connection.execute(
+                "INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)",
+                (note_id, int(tag_row["id"])),
+            )
+        self._delete_orphan_tags()
+
+    def _delete_orphan_tags(self) -> None:
+        self.connection.execute(
+            """
+            DELETE FROM tags
+            WHERE NOT EXISTS (
+                SELECT 1 FROM note_tags WHERE note_tags.tag_id = tags.id
+            )
+            """
+        )
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     @staticmethod
     def _row_to_note(row: sqlite3.Row) -> Note:

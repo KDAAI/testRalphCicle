@@ -8,13 +8,13 @@ Add normalized tag behavior and multi-tag filtering across storage and the exist
 
 ## Acceptance criteria
 
-- [ ] `list_tags` returns normalized, deduplicated tags sorted case-insensitively.
-- [ ] `list_notes` accepts multiple selected tags and returns only notes that contain every selected tag.
-- [ ] Search still works together with selected tags.
-- [ ] Reset clears both search text and all selected tag filters.
-- [ ] The UI allows tag controls to toggle on and off independently.
-- [ ] The UI can display selected filters and distinguish all-note counts from filtered result counts.
-- [ ] Tests cover multi-tag AND filtering and normalized tag listing.
+- [x] `list_tags` returns normalized, deduplicated tags sorted case-insensitively.
+- [x] `list_notes` accepts multiple selected tags and returns only notes that contain every selected tag.
+- [x] Search still works together with selected tags.
+- [x] Reset clears both search text and all selected tag filters.
+- [x] The UI allows tag controls to toggle on and off independently.
+- [x] The UI can display selected filters and distinguish all-note counts from filtered result counts.
+- [x] Tests cover multi-tag AND filtering and normalized tag listing.
 
 ## Blocked by
 

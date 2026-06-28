@@ -22,7 +22,7 @@ class RalphNotesApp(tk.Tk):
         super().__init__()
         self.store = store
         self.current_note_id: int | None = None
-        self.active_tag: str | None = None
+        self.selected_tags: set[str] = set()
         self.notes_by_list_index: dict[int, int] = {}
         self.tag_buttons: dict[str, ttk.Button] = {}
 
@@ -88,6 +88,11 @@ class RalphNotesApp(tk.Tk):
         ttk.Label(notes_frame, text="Заметки", style="Muted.TLabel", background="#e7e2d7").grid(
             row=0, column=0, sticky="w", pady=(0, 6)
         )
+        self.note_count_var = tk.StringVar(value="Заметок: 0")
+        ttk.Label(notes_frame, textvariable=self.note_count_var, style="Muted.TLabel", background="#e7e2d7").grid(
+            row=0, column=0, sticky="e", pady=(0, 6)
+        )
+
         self.notes_list = tk.Listbox(
             notes_frame,
             activestyle="none",
@@ -105,6 +110,11 @@ class RalphNotesApp(tk.Tk):
         ttk.Label(sidebar, text="Теги", style="Muted.TLabel", background="#e7e2d7").grid(
             row=4, column=0, sticky="w", pady=(14, 6)
         )
+        self.selected_filters_var = tk.StringVar(value="Все теги")
+        ttk.Label(sidebar, textvariable=self.selected_filters_var, style="Muted.TLabel", background="#e7e2d7").grid(
+            row=4, column=0, sticky="e", pady=(14, 6)
+        )
+
         self.tags_frame = ttk.Frame(sidebar, style="Sidebar.TFrame")
         self.tags_frame.grid(row=5, column=0, sticky="ew")
 
@@ -166,7 +176,8 @@ class RalphNotesApp(tk.Tk):
         self.notes_list.delete(0, tk.END)
         self.notes_by_list_index.clear()
 
-        notes = self.store.list_notes(search=self.search_var.get(), tag=self.active_tag)
+        notes = self.store.list_notes(search=self.search_var.get(), tags=sorted(self.selected_tags, key=str.casefold))
+        self._update_filter_readouts(len(notes))
         for index, note in enumerate(notes):
             label = note.title
             if note.tags:
@@ -189,7 +200,7 @@ class RalphNotesApp(tk.Tk):
             return
 
         for index, tag in enumerate(tags):
-            style = "ActiveTag.TButton" if tag == self.active_tag else "Tag.TButton"
+            style = "ActiveTag.TButton" if tag in self.selected_tags else "Tag.TButton"
             button = ttk.Button(
                 self.tags_frame,
                 text=tag,
@@ -200,14 +211,17 @@ class RalphNotesApp(tk.Tk):
             self.tag_buttons[tag] = button
 
     def toggle_tag(self, tag: str) -> None:
-        self.active_tag = None if self.active_tag == tag else tag
+        if tag in self.selected_tags:
+            self.selected_tags.remove(tag)
+        else:
+            self.selected_tags.add(tag)
         self.current_note_id = None
         self.refresh_all()
-        self.status_var.set("Фильтр сброшен" if self.active_tag is None else f"Фильтр: {self.active_tag}")
+        self.status_var.set("Фильтры сброшены" if not self.selected_tags else f"Выбрано тегов: {len(self.selected_tags)}")
 
     def clear_filters(self) -> None:
         self.search_var.set("")
-        self.active_tag = None
+        self.selected_tags.clear()
         self.refresh_all()
         self.status_var.set("Фильтры сброшены")
 
@@ -281,6 +295,17 @@ class RalphNotesApp(tk.Tk):
                 self.notes_list.selection_set(index)
                 self.notes_list.see(index)
                 break
+
+    def _update_filter_readouts(self, shown_count: int) -> None:
+        filters_active = bool(self.search_var.get().strip() or self.selected_tags)
+        count_label = "Найдено" if filters_active else "Заметок"
+        self.note_count_var.set(f"{count_label}: {shown_count}")
+
+        if self.selected_tags:
+            selected = ", ".join(sorted(self.selected_tags, key=str.casefold))
+            self.selected_filters_var.set(f"Выбрано: {selected}")
+        else:
+            self.selected_filters_var.set("Все теги")
 
     def on_close(self) -> None:
         self.store.close()

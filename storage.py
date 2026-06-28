@@ -110,7 +110,12 @@ class NotesStore:
             )
             self._sync_note_tags(note_id, normalized_tags)
 
-    def list_notes(self, search: str = "", tag: str | None = None) -> list[Note]:
+    def list_notes(
+        self,
+        search: str = "",
+        tag: str | None = None,
+        tags: list[str] | None = None,
+    ) -> list[Note]:
         query = "SELECT id, title, body, tags, created_at, updated_at, pinned FROM notes"
         clauses: list[str] = []
         params: list[str] = []
@@ -121,22 +126,27 @@ class NotesStore:
             clauses.append("(title LIKE ? OR body LIKE ? OR tags LIKE ?)")
             params.extend([like, like, like])
 
+        selected_tags = self._selected_tag_keys(tag, tags)
+        for tag_key in selected_tags:
+            clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM note_tags
+                    JOIN tags ON tags.id = note_tags.tag_id
+                    WHERE note_tags.note_id = notes.id
+                    AND tags.normalized_name = ?
+                )
+                """
+            )
+            params.append(tag_key)
+
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
 
         query += " ORDER BY pinned DESC, updated_at DESC, id DESC"
         rows = self.connection.execute(query, params).fetchall()
-        notes = [self._row_to_note(row) for row in rows]
-
-        if tag:
-            tag_key = tag.casefold()
-            notes = [
-                note
-                for note in notes
-                if tag_key in {item.casefold() for item in normalize_tags(note.tags).split(", ") if item}
-            ]
-
-        return notes
+        return [self._row_to_note(row) for row in rows]
 
     def get_note(self, note_id: int) -> Note | None:
         row = self.connection.execute(
@@ -221,6 +231,24 @@ class NotesStore:
             )
             """
         )
+
+    @staticmethod
+    def _selected_tag_keys(tag: str | None, tags: list[str] | None) -> list[str]:
+        values: list[str] = []
+        if tag:
+            values.append(tag)
+        if tags:
+            values.extend(tags)
+
+        keys: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            for normalized_tag in normalize_tags(value).split(", "):
+                key = normalized_tag.casefold()
+                if key and key not in seen:
+                    keys.append(key)
+                    seen.add(key)
+        return keys
 
     @staticmethod
     def _now() -> str:

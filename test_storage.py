@@ -104,6 +104,36 @@ class NotesStoreTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_list_notes_filters_by_multiple_tags_with_search(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            store = NotesStore(Path(temp_dir) / "notes.db")
+            try:
+                store.create_note("Work launch", "Prepare urgent launch checklist", "work, urgent; client")
+                store.create_note("Work someday", "Collect ideas", "work, ideas")
+                store.create_note("Home urgent", "Buy medicine", "home, urgent")
+
+                notes = store.list_notes(tags=["work", "urgent"])
+                self.assertEqual([note.title for note in notes], ["Work launch"])
+
+                notes = store.list_notes(search="checklist", tags=["work", "urgent"])
+                self.assertEqual([note.title for note in notes], ["Work launch"])
+
+                notes = store.list_notes(search="medicine", tags=["work", "urgent"])
+                self.assertEqual(notes, [])
+            finally:
+                store.close()
+
+    def test_list_tags_returns_normalized_unique_tags_sorted_case_insensitively(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            store = NotesStore(Path(temp_dir) / "notes.db")
+            try:
+                store.create_note("One", "Body", " Beta; alpha, beta ")
+                store.create_note("Two", "Body", "ALPHA; Gamma")
+
+                self.assertEqual(store.list_tags(), ["alpha", "Beta", "Gamma"])
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

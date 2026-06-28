@@ -12,6 +12,9 @@ from storage import Note, NotesStore
 
 APP_NAME = "Ralph Notes"
 AUTOSAVE_DELAY_MS = 1000
+NEW_DRAFT_SAVE = "save"
+NEW_DRAFT_DISCARD = "discard"
+NEW_DRAFT_CANCEL = "cancel"
 
 
 class AutosaveController:
@@ -100,6 +103,41 @@ class AutosaveController:
 PINNED_NOTE_PREFIX = "[Р—Р°РєСЂРµРїР»РµРЅРѕ]"
 
 
+class NewDraftGuard:
+    def __init__(
+        self,
+        prompt: Callable[[], str],
+        create_note: Callable[[str, str, str], int],
+    ) -> None:
+        self.prompt = prompt
+        self.create_note = create_note
+
+    def confirm_leave_new_note(
+        self,
+        current_note_id: int | None,
+        title: str,
+        body: str,
+        tags: str,
+    ) -> tuple[bool, int | None]:
+        if current_note_id is not None:
+            return True, current_note_id
+
+        if not self.has_content(title, body, tags):
+            return True, None
+
+        choice = self.prompt()
+        if choice == NEW_DRAFT_SAVE:
+            note_id = self.create_note(title, body, tags)
+            return True, note_id
+        if choice == NEW_DRAFT_DISCARD:
+            return True, None
+        return False, None
+
+    @staticmethod
+    def has_content(title: str, body: str, tags: str) -> bool:
+        return bool(title.strip() or body.strip() or tags.strip())
+
+
 def app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
@@ -151,6 +189,10 @@ class RalphNotesApp(tk.Tk):
             after_cancel=self.after_cancel,
             save_note=self._autosave_existing_note,
             set_status=self.status_var.set,
+        )
+        self.new_draft_guard = NewDraftGuard(
+            prompt=self._ask_new_draft_action,
+            create_note=self._save_new_draft_before_action,
         )
         self._bind_events()
         self.refresh_all()
@@ -357,9 +399,11 @@ class RalphNotesApp(tk.Tk):
         self.status_var.set("Фильтры сброшены")
 
     def new_note(self) -> None:
-        self.autosave.flush()
-        self.autosave.clear_current_note()
+        if not self._prepare_to_leave_current_note():
+            return
+
         self.current_note_id = None
+        self.autosave.clear_current_note()
         self.notes_list.selection_clear(0, tk.END)
         self.loading_note = True
         self.title_var.set("")
@@ -382,7 +426,12 @@ class RalphNotesApp(tk.Tk):
 
         note = self.store.get_note(note_id)
         if note:
-            self.autosave.flush()
+            if not self._prepare_to_leave_current_note():
+                if self.current_note_id is None:
+                    self.notes_list.selection_clear(0, tk.END)
+                else:
+                    self._select_current_note()
+                return
             self.load_note(note)
 
     def load_note(self, note: Note) -> None:
@@ -459,6 +508,52 @@ class RalphNotesApp(tk.Tk):
         self.refresh_all()
         self._select_current_note()
 
+    def _current_editor_snapshot(self) -> tuple[str, str, str]:
+        return (
+            self.title_var.get(),
+            self.body_text.get("1.0", "end-1c"),
+            self.tags_var.get(),
+        )
+
+    def _prepare_to_leave_current_note(self) -> bool:
+        if self.current_note_id is not None:
+            self.autosave.flush()
+            return True
+
+        title, body, tags = self._current_editor_snapshot()
+        allowed, note_id = self.new_draft_guard.confirm_leave_new_note(
+            self.current_note_id,
+            title,
+            body,
+            tags,
+        )
+        if note_id is not None:
+            self.current_note_id = note_id
+        return allowed
+
+    def _save_new_draft_before_action(self, title: str, body: str, tags: str) -> int:
+        note_id = self.store.create_note(title, body, tags)
+        self.current_note_id = note_id
+        self.autosave.mark_saved(note_id, title, body, tags)
+        self.refresh_all()
+        self._select_current_note()
+        self.status_var.set("Р—Р°РјРµС‚РєР° СЃРѕР·РґР°РЅР°")
+        return note_id
+
+    def _ask_new_draft_action(self) -> str:
+        result = messagebox.askyesnocancel(
+            "РќРµСЃРѕС…СЂР°РЅРµРЅРЅР°СЏ Р·Р°РјРµС‚РєР°",
+            "РЎРѕС…СЂР°РЅРёС‚СЊ РЅРѕРІСѓСЋ Р·Р°РјРµС‚РєСѓ РїРµСЂРµРґ РїСЂРѕРґРѕР»Р¶РµРЅРёРµРј?\n\nР”Р° - СЃРѕС…СЂР°РЅРёС‚СЊ, РќРµС‚ - РѕС‚Р±СЂРѕСЃРёС‚СЊ, РћС‚РјРµРЅР° - РѕСЃС‚Р°С‚СЊСЃСЏ.",
+        )
+        if result is True:
+            return NEW_DRAFT_SAVE
+        if result is False:
+            return NEW_DRAFT_DISCARD
+        return NEW_DRAFT_CANCEL
+
+    def prepare_for_export(self) -> bool:
+        return self._prepare_to_leave_current_note()
+
     def delete_current_note(self) -> None:
         if self.current_note_id is None:
             self.new_note()
@@ -517,7 +612,9 @@ class RalphNotesApp(tk.Tk):
             self.selected_filters_var.set("Все теги")
 
     def on_close(self) -> None:
-        self.autosave.flush()
+        if not self._prepare_to_leave_current_note():
+            return
+
         self.store.close()
         self.destroy()
 

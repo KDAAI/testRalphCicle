@@ -1,6 +1,6 @@
 import unittest
 
-from app import AutosaveController, delete_confirmation_for, format_note_list_label
+from app import AutosaveController, NewDraftGuard, delete_confirmation_for, format_note_list_label
 from storage import Note
 
 
@@ -132,6 +132,75 @@ class AutosaveControllerTest(unittest.TestCase):
         controller.flush()
 
         self.assertEqual(saved, [(9, "Old", "Changed before close", "")])
+
+
+class NewDraftGuardTest(unittest.TestCase):
+    def test_empty_new_note_can_be_abandoned_without_prompt_or_record(self) -> None:
+        prompts: list[None] = []
+        saved: list[tuple[str, str, str]] = []
+        guard = NewDraftGuard(
+            prompt=lambda: prompts.append(None) or "cancel",
+            create_note=lambda title, body, tags: saved.append((title, body, tags)) or 1,
+        )
+
+        allowed, note_id = guard.confirm_leave_new_note(None, "  ", "", " ")
+
+        self.assertTrue(allowed)
+        self.assertIsNone(note_id)
+        self.assertEqual(prompts, [])
+        self.assertEqual(saved, [])
+
+    def test_save_choice_creates_new_note_and_allows_action(self) -> None:
+        saved: list[tuple[str, str, str]] = []
+        guard = NewDraftGuard(
+            prompt=lambda: "save",
+            create_note=lambda title, body, tags: saved.append((title, body, tags)) or 42,
+        )
+
+        allowed, note_id = guard.confirm_leave_new_note(None, "Draft", "Body", "work")
+
+        self.assertTrue(allowed)
+        self.assertEqual(note_id, 42)
+        self.assertEqual(saved, [("Draft", "Body", "work")])
+
+    def test_discard_choice_allows_action_without_creating_note(self) -> None:
+        saved: list[tuple[str, str, str]] = []
+        guard = NewDraftGuard(
+            prompt=lambda: "discard",
+            create_note=lambda title, body, tags: saved.append((title, body, tags)) or 1,
+        )
+
+        allowed, note_id = guard.confirm_leave_new_note(None, "Draft", "", "")
+
+        self.assertTrue(allowed)
+        self.assertIsNone(note_id)
+        self.assertEqual(saved, [])
+
+    def test_cancel_choice_blocks_action_and_keeps_draft_unsaved(self) -> None:
+        saved: list[tuple[str, str, str]] = []
+        guard = NewDraftGuard(
+            prompt=lambda: "cancel",
+            create_note=lambda title, body, tags: saved.append((title, body, tags)) or 1,
+        )
+
+        allowed, note_id = guard.confirm_leave_new_note(None, "", "Body", "")
+
+        self.assertFalse(allowed)
+        self.assertIsNone(note_id)
+        self.assertEqual(saved, [])
+
+    def test_existing_note_does_not_use_new_draft_prompt(self) -> None:
+        prompts: list[None] = []
+        guard = NewDraftGuard(
+            prompt=lambda: prompts.append(None) or "cancel",
+            create_note=lambda _title, _body, _tags: 1,
+        )
+
+        allowed, note_id = guard.confirm_leave_new_note(7, "Changed", "Body", "work")
+
+        self.assertTrue(allowed)
+        self.assertEqual(note_id, 7)
+        self.assertEqual(prompts, [])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -9,6 +11,92 @@ from storage import Note, NotesStore
 
 
 APP_NAME = "Ralph Notes"
+AUTOSAVE_DELAY_MS = 1000
+
+
+class AutosaveController:
+    def __init__(
+        self,
+        after: Callable[[int, Callable[[], None]], str],
+        after_cancel: Callable[[str], None],
+        save_note: Callable[[int, str, str, str], None],
+        set_status: Callable[[str], None],
+        clock: Callable[[], str] | None = None,
+        delay_ms: int = AUTOSAVE_DELAY_MS,
+    ) -> None:
+        self.after = after
+        self.after_cancel = after_cancel
+        self.save_note = save_note
+        self.set_status = set_status
+        self.clock = clock or (lambda: datetime.now().strftime("%H:%M:%S"))
+        self.delay_ms = delay_ms
+        self.current_note_id: int | None = None
+        self.saved_snapshot: tuple[str, str, str] | None = None
+        self.pending_snapshot: tuple[str, str, str] | None = None
+        self.pending_after_id: str | None = None
+
+    def load_existing_note(self, note_id: int, title: str, body: str, tags: str) -> None:
+        self.cancel_pending()
+        self.current_note_id = note_id
+        self.saved_snapshot = (title, body, tags)
+        self.pending_snapshot = None
+
+    def clear_current_note(self) -> None:
+        self.cancel_pending()
+        self.current_note_id = None
+        self.saved_snapshot = None
+        self.pending_snapshot = None
+
+    def note_changed(self, title: str, body: str, tags: str) -> None:
+        if self.current_note_id is None:
+            return
+
+        snapshot = (title, body, tags)
+        if snapshot == self.saved_snapshot:
+            self.cancel_pending()
+            self.pending_snapshot = None
+            return
+
+        self.pending_snapshot = snapshot
+        self.set_status("Есть несохраненные изменения")
+        self._schedule()
+
+    def flush(self) -> None:
+        if self.pending_snapshot is not None:
+            self._save_pending()
+
+    def mark_saved(self, note_id: int, title: str, body: str, tags: str) -> None:
+        self.cancel_pending()
+        self.current_note_id = note_id
+        self.saved_snapshot = (title, body, tags)
+        self.pending_snapshot = None
+
+    def cancel_pending(self) -> None:
+        if self.pending_after_id is not None:
+            self.after_cancel(self.pending_after_id)
+            self.pending_after_id = None
+
+    def _schedule(self) -> None:
+        self.cancel_pending()
+        self.pending_after_id = self.after(self.delay_ms, self._save_pending)
+
+    def _save_pending(self) -> None:
+        self.pending_after_id = None
+        if self.current_note_id is None or self.pending_snapshot is None:
+            return
+
+        title, body, tags = self.pending_snapshot
+        try:
+            self.save_note(self.current_note_id, title, body, tags)
+        except Exception as error:
+            self.set_status(f"Ошибка автосохранения: {error}")
+            return
+
+        self.saved_snapshot = self.pending_snapshot
+        self.pending_snapshot = None
+        self.set_status(f"Сохранено автоматически: {self.clock()}")
+
+
 PINNED_NOTE_PREFIX = "[Р—Р°РєСЂРµРїР»РµРЅРѕ]"
 
 
@@ -48,6 +136,7 @@ class RalphNotesApp(tk.Tk):
         self.pin_button: ttk.Button | None = None
         self.edit_menu: tk.Menu | None = None
         self.pin_menu_index: int | None = None
+        self.loading_note = False
 
         self.title(APP_NAME)
         self.geometry("1040x680")
@@ -57,6 +146,12 @@ class RalphNotesApp(tk.Tk):
         self._configure_styles()
         self._build_menu()
         self._build_layout()
+        self.autosave = AutosaveController(
+            after=self.after,
+            after_cancel=self.after_cancel,
+            save_note=self._autosave_existing_note,
+            set_status=self.status_var.set,
+        )
         self._bind_events()
         self.refresh_all()
         self.new_note()
@@ -198,6 +293,9 @@ class RalphNotesApp(tk.Tk):
 
     def _bind_events(self) -> None:
         self.search_var.trace_add("write", lambda *_: self.refresh_notes())
+        self.title_var.trace_add("write", lambda *_: self._editor_changed())
+        self.tags_var.trace_add("write", lambda *_: self._editor_changed())
+        self.body_text.bind("<<Modified>>", self._body_changed)
         self.notes_list.bind("<<ListboxSelect>>", self.on_note_selected)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -259,11 +357,16 @@ class RalphNotesApp(tk.Tk):
         self.status_var.set("Фильтры сброшены")
 
     def new_note(self) -> None:
+        self.autosave.flush()
+        self.autosave.clear_current_note()
         self.current_note_id = None
         self.notes_list.selection_clear(0, tk.END)
+        self.loading_note = True
         self.title_var.set("")
         self.tags_var.set("")
         self.body_text.delete("1.0", tk.END)
+        self.body_text.edit_modified(False)
+        self.loading_note = False
         self.title_entry.focus_set()
         self.status_var.set("Новая заметка")
         self._update_pin_action_state()
@@ -279,14 +382,19 @@ class RalphNotesApp(tk.Tk):
 
         note = self.store.get_note(note_id)
         if note:
+            self.autosave.flush()
             self.load_note(note)
 
     def load_note(self, note: Note) -> None:
         self.current_note_id = note.id
+        self.loading_note = True
         self.title_var.set(note.title)
         self.tags_var.set(note.tags)
         self.body_text.delete("1.0", tk.END)
         self.body_text.insert("1.0", note.body)
+        self.body_text.edit_modified(False)
+        self.loading_note = False
+        self.autosave.load_existing_note(note.id, note.title, note.body, note.tags)
         self.status_var.set(f"Открыта заметка: {note.title}")
         self._update_pin_action_state(note)
 
@@ -302,6 +410,7 @@ class RalphNotesApp(tk.Tk):
             self.store.update_note(self.current_note_id, title, body, tags)
             self.status_var.set("Заметка сохранена")
 
+        self.autosave.mark_saved(self.current_note_id, title, body, tags)
         self.refresh_all()
         self._select_current_note()
         self._update_pin_action_state()
@@ -329,6 +438,26 @@ class RalphNotesApp(tk.Tk):
         self.refresh_all()
         self._select_current_note()
         self._update_pin_action_state()
+
+    def _body_changed(self, _event: tk.Event) -> None:
+        if self.body_text.edit_modified():
+            self.body_text.edit_modified(False)
+            self._editor_changed()
+
+    def _editor_changed(self) -> None:
+        if self.loading_note:
+            return
+
+        self.autosave.note_changed(
+            self.title_var.get(),
+            self.body_text.get("1.0", "end-1c"),
+            self.tags_var.get(),
+        )
+
+    def _autosave_existing_note(self, note_id: int, title: str, body: str, tags: str) -> None:
+        self.store.update_note(note_id, title, body, tags)
+        self.refresh_all()
+        self._select_current_note()
 
     def delete_current_note(self) -> None:
         if self.current_note_id is None:
@@ -388,6 +517,7 @@ class RalphNotesApp(tk.Tk):
             self.selected_filters_var.set("Все теги")
 
     def on_close(self) -> None:
+        self.autosave.flush()
         self.store.close()
         self.destroy()
 

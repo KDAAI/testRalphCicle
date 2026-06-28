@@ -8,13 +8,13 @@ Add autosave for existing notes while preserving the manual Save button. Changes
 
 ## Acceptance criteria
 
-- [ ] Existing notes autosave after a one-second idle delay following title, body, or tag changes.
-- [ ] Autosave does not run on every keystroke.
-- [ ] Autosave does not automatically create brand-new notes.
-- [ ] The Save button remains available and can still save immediately.
-- [ ] Successful autosave shows a useful saved-at status.
-- [ ] Autosave errors appear in the status area rather than disruptive popups.
-- [ ] Closing the app quietly saves changed existing notes where practical.
+- [x] Existing notes autosave after a one-second idle delay following title, body, or tag changes.
+- [x] Autosave does not run on every keystroke.
+- [x] Autosave does not automatically create brand-new notes.
+- [x] The Save button remains available and can still save immediately.
+- [x] Successful autosave shows a useful saved-at status.
+- [x] Autosave errors appear in the status area rather than disruptive popups.
+- [x] Closing the app quietly saves changed existing notes where practical.
 
 ## Blocked by
 

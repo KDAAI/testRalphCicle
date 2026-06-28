@@ -8,12 +8,12 @@ Add the complete pin and unpin path described in the parent PRD. Users should be
 
 ## Acceptance criteria
 
-- [ ] Users can pin and unpin the selected note from the editor action area.
-- [ ] Users can pin and unpin the selected note from the Edit menu.
-- [ ] Pinned notes are visually marked in the list using the PRD's configured prefix.
-- [ ] Pinning or unpinning updates the note modification timestamp.
-- [ ] Deleting a pinned note shows a stronger confirmation than deleting a regular note.
-- [ ] Tests cover pinned-note sorting and pin-state modification behavior where practical.
+- [x] Users can pin and unpin the selected note from the editor action area.
+- [x] Users can pin and unpin the selected note from the Edit menu.
+- [x] Pinned notes are visually marked in the list using the PRD's configured prefix.
+- [x] Pinning or unpinning updates the note modification timestamp.
+- [x] Deleting a pinned note shows a stronger confirmation than deleting a regular note.
+- [x] Tests cover pinned-note sorting and pin-state modification behavior where practical.
 
 ## Blocked by
 

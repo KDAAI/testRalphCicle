@@ -9,12 +9,32 @@ from storage import Note, NotesStore
 
 
 APP_NAME = "Ralph Notes"
+PINNED_NOTE_PREFIX = "[Р—Р°РєСЂРµРїР»РµРЅРѕ]"
 
 
 def app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
+
+
+def format_note_list_label(note: Note) -> str:
+    label = note.title
+    if note.pinned:
+        label = f"{PINNED_NOTE_PREFIX} {label}"
+    if note.tags:
+        label += f"  [{note.tags}]"
+    return label
+
+
+def delete_confirmation_for(note: Note) -> tuple[str, str]:
+    title = note.title.strip() or "Р‘РµР· РЅР°Р·РІР°РЅРёСЏ"
+    if note.pinned:
+        return (
+            "РЈРґР°Р»РёС‚СЊ Р·Р°РєСЂРµРїР»РµРЅРЅСѓСЋ Р·Р°РјРµС‚РєСѓ",
+            f"Р­С‚Р° Р·Р°РјРµС‚РєР° Р·Р°РєСЂРµРїР»РµРЅР°. РЈРґР°Р»РёС‚СЊ Р·Р°РєСЂРµРїР»РµРЅРЅСѓСЋ Р·Р°РјРµС‚РєСѓ В«{title}В»?",
+        )
+    return ("РЈРґР°Р»РёС‚СЊ Р·Р°РјРµС‚РєСѓ", f"РЈРґР°Р»РёС‚СЊ Р·Р°РјРµС‚РєСѓ В«{title}В»?")
 
 
 class RalphNotesApp(tk.Tk):
@@ -25,6 +45,9 @@ class RalphNotesApp(tk.Tk):
         self.selected_tags: set[str] = set()
         self.notes_by_list_index: dict[int, int] = {}
         self.tag_buttons: dict[str, ttk.Button] = {}
+        self.pin_button: ttk.Button | None = None
+        self.edit_menu: tk.Menu | None = None
+        self.pin_menu_index: int | None = None
 
         self.title(APP_NAME)
         self.geometry("1040x680")
@@ -32,6 +55,7 @@ class RalphNotesApp(tk.Tk):
         self.configure(bg="#f4f1ea")
 
         self._configure_styles()
+        self._build_menu()
         self._build_layout()
         self._bind_events()
         self.refresh_all()
@@ -53,6 +77,14 @@ class RalphNotesApp(tk.Tk):
         style.map("Danger.TButton", background=[("active", "#82332c")])
         style.configure("ActiveTag.TButton", background="#d6a84f", foreground="#1f1a12")
         style.configure("Tag.TButton", background="#fff8e8", foreground="#2b2a26")
+
+    def _build_menu(self) -> None:
+        menu_bar = tk.Menu(self)
+        self.edit_menu = tk.Menu(menu_bar, tearoff=False)
+        self.edit_menu.add_command(label=self._pin_action_label(), command=self.toggle_pin_current_note)
+        self.pin_menu_index = 0
+        menu_bar.add_cascade(label="РџСЂР°РІРєР°", menu=self.edit_menu)
+        self.config(menu=menu_bar)
 
     def _build_layout(self) -> None:
         self.columnconfigure(0, weight=0)
@@ -158,8 +190,10 @@ class RalphNotesApp(tk.Tk):
         ttk.Button(actions, text="Удалить", style="Danger.TButton", command=self.delete_current_note).grid(
             row=0, column=1, padx=(0, 8)
         )
+        self.pin_button = ttk.Button(actions, text=self._pin_action_label(), command=self.toggle_pin_current_note)
+        self.pin_button.grid(row=0, column=2, padx=(0, 8))
         ttk.Button(actions, text="Сохранить", style="Primary.TButton", command=self.save_current_note).grid(
-            row=0, column=2
+            row=0, column=3
         )
 
     def _bind_events(self) -> None:
@@ -179,13 +213,12 @@ class RalphNotesApp(tk.Tk):
         notes = self.store.list_notes(search=self.search_var.get(), tags=sorted(self.selected_tags, key=str.casefold))
         self._update_filter_readouts(len(notes))
         for index, note in enumerate(notes):
-            label = note.title
-            if note.tags:
-                label += f"  [{note.tags}]"
+            label = format_note_list_label(note)
             self.notes_list.insert(tk.END, label)
             self.notes_by_list_index[index] = note.id
             if note.id == selected_id:
                 self.notes_list.selection_set(index)
+        self._update_pin_action_state()
 
     def refresh_tags(self) -> None:
         for child in self.tags_frame.winfo_children():
@@ -233,6 +266,7 @@ class RalphNotesApp(tk.Tk):
         self.body_text.delete("1.0", tk.END)
         self.title_entry.focus_set()
         self.status_var.set("Новая заметка")
+        self._update_pin_action_state()
 
     def on_note_selected(self, _event: tk.Event) -> None:
         selection = self.notes_list.curselection()
@@ -254,6 +288,7 @@ class RalphNotesApp(tk.Tk):
         self.body_text.delete("1.0", tk.END)
         self.body_text.insert("1.0", note.body)
         self.status_var.set(f"Открыта заметка: {note.title}")
+        self._update_pin_action_state(note)
 
     def save_current_note(self) -> None:
         title = self.title_var.get()
@@ -269,14 +304,44 @@ class RalphNotesApp(tk.Tk):
 
         self.refresh_all()
         self._select_current_note()
+        self._update_pin_action_state()
+
+    def toggle_pin_current_note(self) -> None:
+        if self.current_note_id is None:
+            self.status_var.set("РќРµС‡РµРіРѕ Р·Р°РєСЂРµРїР»СЏС‚СЊ")
+            return
+
+        note = self.store.get_note(self.current_note_id)
+        if note is None:
+            self.status_var.set("Р—Р°РјРµС‚РєР° РЅРµ РЅР°Р№РґРµРЅР°")
+            self.new_note()
+            return
+
+        next_pinned = not note.pinned
+        self.store.update_note(
+            self.current_note_id,
+            self.title_var.get(),
+            self.body_text.get("1.0", "end-1c"),
+            self.tags_var.get(),
+            pinned=next_pinned,
+        )
+        self.status_var.set("Р—Р°РјРµС‚РєР° Р·Р°РєСЂРµРїР»РµРЅР°" if next_pinned else "Р—Р°РјРµС‚РєР° РѕС‚РєСЂРµРїР»РµРЅР°")
+        self.refresh_all()
+        self._select_current_note()
+        self._update_pin_action_state()
 
     def delete_current_note(self) -> None:
         if self.current_note_id is None:
             self.new_note()
             return
 
-        title = self.title_var.get().strip() or "Без названия"
-        confirmed = messagebox.askyesno("Удалить заметку", f"Удалить заметку «{title}»?")
+        note = self.store.get_note(self.current_note_id)
+        if note is None:
+            self.new_note()
+            return
+
+        title, message = delete_confirmation_for(note)
+        confirmed = messagebox.askyesno(title, message)
         if not confirmed:
             return
 
@@ -295,6 +360,21 @@ class RalphNotesApp(tk.Tk):
                 self.notes_list.selection_set(index)
                 self.notes_list.see(index)
                 break
+
+    def _pin_action_label(self, note: Note | None = None) -> str:
+        if note is None and self.current_note_id is not None:
+            note = self.store.get_note(self.current_note_id)
+        if note and note.pinned:
+            return "РћС‚РєСЂРµРїРёС‚СЊ"
+        return "Р—Р°РєСЂРµРїРёС‚СЊ"
+
+    def _update_pin_action_state(self, note: Note | None = None) -> None:
+        label = self._pin_action_label(note)
+        state = tk.NORMAL if self.current_note_id is not None else tk.DISABLED
+        if self.pin_button is not None:
+            self.pin_button.configure(text=label, state=state)
+        if self.edit_menu is not None and self.pin_menu_index is not None:
+            self.edit_menu.entryconfig(self.pin_menu_index, label=label, state=state)
 
     def _update_filter_readouts(self, shown_count: int) -> None:
         filters_active = bool(self.search_var.get().strip() or self.selected_tags)

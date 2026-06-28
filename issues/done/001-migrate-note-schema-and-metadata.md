@@ -8,12 +8,12 @@ Add the safe storage foundation for the note-management upgrade described in the
 
 ## Acceptance criteria
 
-- [ ] Existing databases with the current `notes` table open without manual database work.
-- [ ] Notes gain `created_at`, `updated_at`, and `pinned` storage fields with sensible defaults.
-- [ ] Dedicated tag and note-tag relationship tables are created automatically.
-- [ ] Existing comma- or semicolon-separated note tags are migrated into the normalized tag structure.
-- [ ] Migration is idempotent and safe to run repeatedly.
-- [ ] Storage tests cover migration from an old database shape.
+- [x] Existing databases with the current `notes` table open without manual database work.
+- [x] Notes gain `created_at`, `updated_at`, and `pinned` storage fields with sensible defaults.
+- [x] Dedicated tag and note-tag relationship tables are created automatically.
+- [x] Existing comma- or semicolon-separated note tags are migrated into the normalized tag structure.
+- [x] Migration is idempotent and safe to run repeatedly.
+- [x] Storage tests cover migration from an old database shape.
 
 ## Blocked by
 

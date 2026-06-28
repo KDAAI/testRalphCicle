@@ -197,6 +197,22 @@ class NotesStore:
         self._delete_orphan_tags()
         self.connection.commit()
 
+    def export_notes(self) -> list[dict[str, object]]:
+        exported: list[dict[str, object]] = []
+        for note in self.list_notes():
+            exported.append(
+                {
+                    "id": note.id,
+                    "title": note.title,
+                    "body": note.body,
+                    "tags": self._tags_to_list(note.tags),
+                    "pinned": note.pinned,
+                    "created_at": note.created_at,
+                    "updated_at": note.updated_at,
+                }
+            )
+        return exported
+
     def list_tags(self) -> list[str]:
         rows = self.connection.execute("SELECT name FROM tags ORDER BY lower(name)").fetchall()
         return [str(row["name"]) for row in rows]
@@ -249,6 +265,12 @@ class NotesStore:
                     keys.append(key)
                     seen.add(key)
         return keys
+
+    @staticmethod
+    def _tags_to_list(tags: str) -> list[str]:
+        if not tags:
+            return []
+        return [tag for tag in normalize_tags(tags).split(", ") if tag]
 
     @staticmethod
     def _now() -> str:

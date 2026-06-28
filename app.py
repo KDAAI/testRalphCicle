@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from storage import Note, NotesStore
 
@@ -163,6 +164,13 @@ def delete_confirmation_for(note: Note) -> tuple[str, str]:
     return ("РЈРґР°Р»РёС‚СЊ Р·Р°РјРµС‚РєСѓ", f"РЈРґР°Р»РёС‚СЊ Р·Р°РјРµС‚РєСѓ В«{title}В»?")
 
 
+def write_notes_export(path: str | Path, notes: list[dict[str, object]]) -> None:
+    Path(path).write_text(
+        json.dumps({"notes": notes}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 class RalphNotesApp(tk.Tk):
     def __init__(self, store: NotesStore) -> None:
         super().__init__()
@@ -217,6 +225,13 @@ class RalphNotesApp(tk.Tk):
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self)
+        file_menu = tk.Menu(menu_bar, tearoff=False)
+        file_menu.add_command(label="Новая заметка", command=self.new_note)
+        file_menu.add_command(label="Экспорт...", command=self.export_notes)
+        file_menu.add_separator()
+        file_menu.add_command(label="Выход", command=self.on_close)
+        menu_bar.add_cascade(label="Файл", menu=file_menu)
+
         self.edit_menu = tk.Menu(menu_bar, tearoff=False)
         self.edit_menu.add_command(label=self._pin_action_label(), command=self.toggle_pin_current_note)
         self.pin_menu_index = 0
@@ -553,6 +568,30 @@ class RalphNotesApp(tk.Tk):
 
     def prepare_for_export(self) -> bool:
         return self._prepare_to_leave_current_note()
+
+    def export_notes(self) -> None:
+        if not self.prepare_for_export():
+            self.status_var.set("Экспорт отменен")
+            return
+
+        export_path = filedialog.asksaveasfilename(
+            title="Экспорт заметок",
+            defaultextension=".json",
+            filetypes=(("JSON", "*.json"), ("Все файлы", "*.*")),
+            initialfile=f"ralph-notes-{datetime.now().strftime('%Y-%m-%d')}.json",
+        )
+        if not export_path:
+            self.status_var.set("Экспорт отменен")
+            return
+
+        try:
+            notes = self.store.export_notes()
+            write_notes_export(export_path, notes)
+        except Exception as error:
+            self.status_var.set(f"Ошибка экспорта: {error}")
+            return
+
+        self.status_var.set(f"Экспортировано заметок: {len(notes)}")
 
     def delete_current_note(self) -> None:
         if self.current_note_id is None:

@@ -1,6 +1,9 @@
 import unittest
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from app import AutosaveController, NewDraftGuard, delete_confirmation_for, format_note_list_label
+from app import AutosaveController, NewDraftGuard, delete_confirmation_for, format_note_list_label, write_notes_export
 from storage import Note
 
 
@@ -29,6 +32,27 @@ class AppFormattingTest(unittest.TestCase):
         self.assertNotEqual(pinned_title, regular_title)
         self.assertIn("Р·Р°РєСЂРµРїР»РµРЅРЅСѓСЋ", pinned_message)
         self.assertIn("Important", pinned_message)
+
+    def test_write_notes_export_writes_readable_json_payload(self) -> None:
+        notes = [
+            {
+                "id": 7,
+                "title": "Backup",
+                "body": "Body",
+                "tags": ["work", "urgent"],
+                "pinned": True,
+                "created_at": "2026-06-28T10:00:00+00:00",
+                "updated_at": "2026-06-28T11:00:00+00:00",
+            }
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "notes.json"
+            write_notes_export(export_path, notes)
+
+            payload = json.loads(export_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload, {"notes": notes})
 
 
 class FakeScheduler:

@@ -134,6 +134,35 @@ class NotesStoreTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_export_notes_returns_all_restorable_fields_with_tag_lists(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            store = NotesStore(Path(temp_dir) / "notes.db")
+            try:
+                pinned_id = store.create_note("Pinned", "Important body", "work, urgent", pinned=True)
+                regular_id = store.create_note("Regular", "Other body", "ideas")
+
+                exported = store.export_notes()
+
+                self.assertEqual([note["id"] for note in exported], [pinned_id, regular_id])
+                self.assertEqual(
+                    exported[0],
+                    {
+                        "id": pinned_id,
+                        "title": "Pinned",
+                        "body": "Important body",
+                        "tags": ["work", "urgent"],
+                        "pinned": True,
+                        "created_at": exported[0]["created_at"],
+                        "updated_at": exported[0]["updated_at"],
+                    },
+                )
+                self.assertTrue(exported[0]["created_at"])
+                self.assertTrue(exported[0]["updated_at"])
+                self.assertEqual(exported[1]["tags"], ["ideas"])
+                self.assertFalse(exported[1]["pinned"])
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

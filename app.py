@@ -184,6 +184,19 @@ def read_notes_import(path: str | Path) -> list[dict[str, object]]:
     return notes
 
 
+def delete_shortcut_allows_delete(focused_widget_class: str | None) -> bool:
+    editing_widget_classes = {
+        "Entry",
+        "TEntry",
+        "Text",
+        "Spinbox",
+        "TSpinbox",
+        "Combobox",
+        "TCombobox",
+    }
+    return focused_widget_class not in editing_widget_classes
+
+
 class RalphNotesApp(tk.Tk):
     def __init__(self, store: NotesStore) -> None:
         super().__init__()
@@ -195,6 +208,7 @@ class RalphNotesApp(tk.Tk):
         self.pin_button: ttk.Button | None = None
         self.edit_menu: tk.Menu | None = None
         self.pin_menu_index: int | None = None
+        self.delete_menu_index: int | None = None
         self.loading_note = False
 
         self.title(APP_NAME)
@@ -239,9 +253,9 @@ class RalphNotesApp(tk.Tk):
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self)
         file_menu = tk.Menu(menu_bar, tearoff=False)
-        file_menu.add_command(label="Новая заметка", command=self.new_note)
-        file_menu.add_command(label="Импорт...", command=self.import_notes)
-        file_menu.add_command(label="Экспорт...", command=self.export_notes)
+        file_menu.add_command(label="Новая заметка", accelerator="Ctrl+N", command=self.new_note)
+        file_menu.add_command(label="Импорт...", accelerator="Ctrl+I", command=self.import_notes)
+        file_menu.add_command(label="Экспорт...", accelerator="Ctrl+E", command=self.export_notes)
         file_menu.add_separator()
         file_menu.add_command(label="Выход", command=self.on_close)
         menu_bar.add_cascade(label="Файл", menu=file_menu)
@@ -249,6 +263,8 @@ class RalphNotesApp(tk.Tk):
         self.edit_menu = tk.Menu(menu_bar, tearoff=False)
         self.edit_menu.add_command(label=self._pin_action_label(), command=self.toggle_pin_current_note)
         self.pin_menu_index = 0
+        self.edit_menu.add_command(label="Удалить", accelerator="Delete", command=self.delete_current_note)
+        self.delete_menu_index = 1
         menu_bar.add_cascade(label="РџСЂР°РІРєР°", menu=self.edit_menu)
         self.config(menu=menu_bar)
 
@@ -267,8 +283,8 @@ class RalphNotesApp(tk.Tk):
         )
 
         self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(sidebar, textvariable=self.search_var, width=30)
-        search_entry.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.search_entry = ttk.Entry(sidebar, textvariable=self.search_var, width=30)
+        self.search_entry.grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
         buttons = ttk.Frame(sidebar, style="Sidebar.TFrame")
         buttons.grid(row=2, column=0, sticky="ew", pady=(0, 10))
@@ -368,7 +384,34 @@ class RalphNotesApp(tk.Tk):
         self.tags_var.trace_add("write", lambda *_: self._editor_changed())
         self.body_text.bind("<<Modified>>", self._body_changed)
         self.notes_list.bind("<<ListboxSelect>>", self.on_note_selected)
+        self.bind_all("<Control-n>", lambda event: self._run_shortcut(event, self.new_note))
+        self.bind_all("<Control-N>", lambda event: self._run_shortcut(event, self.new_note))
+        self.bind_all("<Control-s>", lambda event: self._run_shortcut(event, self.save_current_note))
+        self.bind_all("<Control-S>", lambda event: self._run_shortcut(event, self.save_current_note))
+        self.bind_all("<Control-i>", lambda event: self._run_shortcut(event, self.import_notes))
+        self.bind_all("<Control-I>", lambda event: self._run_shortcut(event, self.import_notes))
+        self.bind_all("<Control-e>", lambda event: self._run_shortcut(event, self.export_notes))
+        self.bind_all("<Control-E>", lambda event: self._run_shortcut(event, self.export_notes))
+        self.bind_all("<Control-f>", lambda event: self._run_shortcut(event, self.focus_search))
+        self.bind_all("<Control-F>", lambda event: self._run_shortcut(event, self.focus_search))
+        self.bind_all("<Delete>", self._delete_from_shortcut)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _run_shortcut(self, _event: tk.Event, command: Callable[[], None]) -> str:
+        command()
+        return "break"
+
+    def _delete_from_shortcut(self, _event: tk.Event) -> str | None:
+        focused_widget = self.focus_get()
+        focused_widget_class = focused_widget.winfo_class() if focused_widget is not None else None
+        if delete_shortcut_allows_delete(focused_widget_class):
+            self.delete_current_note()
+            return "break"
+        return None
+
+    def focus_search(self) -> None:
+        self.search_entry.focus_set()
+        self.search_entry.select_range(0, tk.END)
 
     def refresh_all(self) -> None:
         self.refresh_notes()
@@ -679,6 +722,8 @@ class RalphNotesApp(tk.Tk):
             self.pin_button.configure(text=label, state=state)
         if self.edit_menu is not None and self.pin_menu_index is not None:
             self.edit_menu.entryconfig(self.pin_menu_index, label=label, state=state)
+        if self.edit_menu is not None and self.delete_menu_index is not None:
+            self.edit_menu.entryconfig(self.delete_menu_index, state=state)
 
     def _update_filter_readouts(self, shown_count: int) -> None:
         filters_active = bool(self.search_var.get().strip() or self.selected_tags)

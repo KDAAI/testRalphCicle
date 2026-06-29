@@ -3,7 +3,15 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from app import AutosaveController, NewDraftGuard, delete_confirmation_for, format_note_list_label, read_notes_import, write_notes_export
+from app import (
+    AutosaveController,
+    NewDraftGuard,
+    delete_confirmation_for,
+    delete_shortcut_allows_delete,
+    format_note_list_label,
+    read_notes_import,
+    write_notes_export,
+)
 from storage import Note
 
 
@@ -20,6 +28,14 @@ def make_note(title: str, tags: str = "", pinned: bool = False) -> Note:
 
 
 class AppFormattingTest(unittest.TestCase):
+    def test_delete_shortcut_ignores_editing_fields(self) -> None:
+        self.assertFalse(delete_shortcut_allows_delete("Entry"))
+        self.assertFalse(delete_shortcut_allows_delete("TEntry"))
+        self.assertFalse(delete_shortcut_allows_delete("Text"))
+        self.assertFalse(delete_shortcut_allows_delete("Spinbox"))
+        self.assertTrue(delete_shortcut_allows_delete("Listbox"))
+        self.assertTrue(delete_shortcut_allows_delete(None))
+
     def test_pinned_note_list_label_uses_configured_prefix(self) -> None:
         note = make_note("Important", "work", pinned=True)
 

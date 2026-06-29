@@ -8,12 +8,12 @@ Correct the broken Russian UI strings touched by the feature work and update the
 
 ## Acceptance criteria
 
-- [ ] User-facing Russian labels touched by the feature work are readable rather than mojibake.
-- [ ] README describes autosave and the behavior of new unsaved notes.
-- [ ] README describes pinned notes and multi-tag filtering.
-- [ ] README describes JSON import and export behavior.
-- [ ] README lists the keyboard shortcuts.
-- [ ] README keeps source-run and executable-build instructions current.
+- [x] User-facing Russian labels touched by the feature work are readable rather than mojibake.
+- [x] README describes autosave and the behavior of new unsaved notes.
+- [x] README describes pinned notes and multi-tag filtering.
+- [x] README describes JSON import and export behavior.
+- [x] README lists the keyboard shortcuts.
+- [x] README keeps source-run and executable-build instructions current.
 
 ## Blocked by
 

@@ -101,7 +101,7 @@ class AutosaveController:
         self.set_status(f"Сохранено автоматически: {self.clock()}")
 
 
-PINNED_NOTE_PREFIX = "[Р—Р°РєСЂРµРїР»РµРЅРѕ]"
+PINNED_NOTE_PREFIX = "[Закреплено]"
 
 
 class NewDraftGuard:
@@ -155,13 +155,13 @@ def format_note_list_label(note: Note) -> str:
 
 
 def delete_confirmation_for(note: Note) -> tuple[str, str]:
-    title = note.title.strip() or "Р‘РµР· РЅР°Р·РІР°РЅРёСЏ"
+    title = note.title.strip() or "Без названия"
     if note.pinned:
         return (
-            "РЈРґР°Р»РёС‚СЊ Р·Р°РєСЂРµРїР»РµРЅРЅСѓСЋ Р·Р°РјРµС‚РєСѓ",
-            f"Р­С‚Р° Р·Р°РјРµС‚РєР° Р·Р°РєСЂРµРїР»РµРЅР°. РЈРґР°Р»РёС‚СЊ Р·Р°РєСЂРµРїР»РµРЅРЅСѓСЋ Р·Р°РјРµС‚РєСѓ В«{title}В»?",
+            "Удалить закрепленную заметку",
+            f"Эта заметка закреплена. Удалить закрепленную заметку «{title}»?",
         )
-    return ("РЈРґР°Р»РёС‚СЊ Р·Р°РјРµС‚РєСѓ", f"РЈРґР°Р»РёС‚СЊ Р·Р°РјРµС‚РєСѓ В«{title}В»?")
+    return ("Удалить заметку", f"Удалить заметку «{title}»?")
 
 
 def write_notes_export(path: str | Path, notes: list[dict[str, object]]) -> None:
@@ -276,7 +276,7 @@ class RalphNotesApp(tk.Tk):
         self.pin_menu_index = 0
         self.edit_menu.add_command(label="Удалить", accelerator="Delete", command=self.delete_current_note)
         self.delete_menu_index = 1
-        menu_bar.add_cascade(label="РџСЂР°РІРєР°", menu=self.edit_menu)
+        menu_bar.add_cascade(label="Правка", menu=self.edit_menu)
         self.config(menu=menu_bar)
 
     def _build_layout(self) -> None:
@@ -549,12 +549,12 @@ class RalphNotesApp(tk.Tk):
 
     def toggle_pin_current_note(self) -> None:
         if self.current_note_id is None:
-            self.status_var.set("РќРµС‡РµРіРѕ Р·Р°РєСЂРµРїР»СЏС‚СЊ")
+            self.status_var.set("Нечего закреплять")
             return
 
         note = self.store.get_note(self.current_note_id)
         if note is None:
-            self.status_var.set("Р—Р°РјРµС‚РєР° РЅРµ РЅР°Р№РґРµРЅР°")
+            self.status_var.set("Заметка не найдена")
             self.new_note()
             return
 
@@ -566,7 +566,7 @@ class RalphNotesApp(tk.Tk):
             self.tags_var.get(),
             pinned=next_pinned,
         )
-        self.status_var.set("Р—Р°РјРµС‚РєР° Р·Р°РєСЂРµРїР»РµРЅР°" if next_pinned else "Р—Р°РјРµС‚РєР° РѕС‚РєСЂРµРїР»РµРЅР°")
+        self.status_var.set("Заметка закреплена" if next_pinned else "Заметка откреплена")
         self.refresh_all()
         self._select_current_note()
         self._update_pin_action_state()
@@ -620,13 +620,13 @@ class RalphNotesApp(tk.Tk):
         self.autosave.mark_saved(note_id, title, body, tags)
         self.refresh_all()
         self._select_current_note()
-        self.status_var.set("Р—Р°РјРµС‚РєР° СЃРѕР·РґР°РЅР°")
+        self.status_var.set("Заметка создана")
         return note_id
 
     def _ask_new_draft_action(self) -> str:
         result = messagebox.askyesnocancel(
-            "РќРµСЃРѕС…СЂР°РЅРµРЅРЅР°СЏ Р·Р°РјРµС‚РєР°",
-            "РЎРѕС…СЂР°РЅРёС‚СЊ РЅРѕРІСѓСЋ Р·Р°РјРµС‚РєСѓ РїРµСЂРµРґ РїСЂРѕРґРѕР»Р¶РµРЅРёРµРј?\n\nР”Р° - СЃРѕС…СЂР°РЅРёС‚СЊ, РќРµС‚ - РѕС‚Р±СЂРѕСЃРёС‚СЊ, РћС‚РјРµРЅР° - РѕСЃС‚Р°С‚СЊСЃСЏ.",
+            "Несохраненная заметка",
+            "Сохранить новую заметку перед продолжением?\n\nДа - сохранить, Нет - отбросить, Отмена - остаться.",
         )
         if result is True:
             return NEW_DRAFT_SAVE
@@ -723,8 +723,8 @@ class RalphNotesApp(tk.Tk):
         if note is None and self.current_note_id is not None:
             note = self.store.get_note(self.current_note_id)
         if note and note.pinned:
-            return "РћС‚РєСЂРµРїРёС‚СЊ"
-        return "Р—Р°РєСЂРµРїРёС‚СЊ"
+            return "Открепить"
+        return "Закрепить"
 
     def _update_pin_action_state(self, note: Note | None = None) -> None:
         label = self._pin_action_label(note)

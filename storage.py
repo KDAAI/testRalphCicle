@@ -21,6 +21,12 @@ class Note:
     pinned: bool
 
 
+@dataclass(frozen=True)
+class ImportResult:
+    added: int
+    skipped_duplicates: int
+
+
 def normalize_tags(value: str) -> str:
     tags: list[str] = []
     seen: set[str] = set()
@@ -213,6 +219,24 @@ class NotesStore:
             )
         return exported
 
+    def import_notes(self, notes: list[dict[str, object]]) -> ImportResult:
+        added = 0
+        skipped_duplicates = 0
+
+        for note in notes:
+            title = str(note.get("title", ""))
+            body = str(note.get("body", ""))
+            if self._note_exists(title.strip() or "Р‘РµР· РЅР°Р·РІР°РЅРёСЏ", body):
+                skipped_duplicates += 1
+                continue
+
+            tags = self._import_tags_to_string(note.get("tags", ""))
+            pinned = bool(note.get("pinned", False))
+            self.create_note(title, body, tags, pinned=pinned)
+            added += 1
+
+        return ImportResult(added=added, skipped_duplicates=skipped_duplicates)
+
     def list_tags(self) -> list[str]:
         rows = self.connection.execute("SELECT name FROM tags ORDER BY lower(name)").fetchall()
         return [str(row["name"]) for row in rows]
@@ -248,6 +272,13 @@ class NotesStore:
             """
         )
 
+    def _note_exists(self, title: str, body: str) -> bool:
+        row = self.connection.execute(
+            "SELECT 1 FROM notes WHERE title = ? AND body = ? LIMIT 1",
+            (title, body),
+        ).fetchone()
+        return row is not None
+
     @staticmethod
     def _selected_tag_keys(tag: str | None, tags: list[str] | None) -> list[str]:
         values: list[str] = []
@@ -271,6 +302,12 @@ class NotesStore:
         if not tags:
             return []
         return [tag for tag in normalize_tags(tags).split(", ") if tag]
+
+    @staticmethod
+    def _import_tags_to_string(tags: object) -> str:
+        if isinstance(tags, list):
+            return ", ".join(str(tag) for tag in tags)
+        return str(tags)
 
     @staticmethod
     def _now() -> str:

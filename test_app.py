@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from app import AutosaveController, NewDraftGuard, delete_confirmation_for, format_note_list_label, write_notes_export
+from app import AutosaveController, NewDraftGuard, delete_confirmation_for, format_note_list_label, read_notes_import, write_notes_export
 from storage import Note
 
 
@@ -53,6 +53,23 @@ class AppFormattingTest(unittest.TestCase):
             payload = json.loads(export_path.read_text(encoding="utf-8"))
 
         self.assertEqual(payload, {"notes": notes})
+
+    def test_read_notes_import_reads_export_payload(self) -> None:
+        notes = [{"title": "Imported", "body": "Body", "tags": ["work"]}]
+
+        with TemporaryDirectory() as temp_dir:
+            import_path = Path(temp_dir) / "notes.json"
+            import_path.write_text(json.dumps({"notes": notes}), encoding="utf-8")
+
+            self.assertEqual(read_notes_import(import_path), notes)
+
+    def test_read_notes_import_rejects_invalid_payload(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            import_path = Path(temp_dir) / "notes.json"
+            import_path.write_text(json.dumps({"items": []}), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "notes"):
+                read_notes_import(import_path)
 
 
 class FakeScheduler:

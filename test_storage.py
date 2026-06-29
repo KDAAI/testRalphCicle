@@ -163,6 +163,45 @@ class NotesStoreTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_import_notes_adds_new_notes_and_skips_exact_title_body_duplicates(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            store = NotesStore(Path(temp_dir) / "notes.db")
+            try:
+                store.create_note("Plan", "Existing body", "work")
+
+                result = store.import_notes(
+                    [
+                        {"title": "Plan", "body": "Existing body", "tags": ["work", "duplicate"]},
+                        {"title": "Plan", "body": "Different body", "tags": ["work"]},
+                    ]
+                )
+
+                self.assertEqual(result.added, 1)
+                self.assertEqual(result.skipped_duplicates, 1)
+                self.assertEqual([note.body for note in store.list_notes(search="Plan")], ["Different body", "Existing body"])
+                self.assertEqual(store.list_tags(), ["work"])
+            finally:
+                store.close()
+
+    def test_import_notes_accepts_list_and_comma_separated_tag_formats(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            store = NotesStore(Path(temp_dir) / "notes.db")
+            try:
+                result = store.import_notes(
+                    [
+                        {"title": "List tags", "body": "Body", "tags": ["work", "urgent"]},
+                        {"title": "String tags", "body": "Body", "tags": "home, ideas; home"},
+                    ]
+                )
+
+                self.assertEqual(result.added, 2)
+                self.assertEqual(result.skipped_duplicates, 0)
+                self.assertEqual(store.get_note(1).tags, "work, urgent")
+                self.assertEqual(store.get_note(2).tags, "home, ideas")
+                self.assertEqual(store.list_tags(), ["home", "ideas", "urgent", "work"])
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

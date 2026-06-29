@@ -171,6 +171,19 @@ def write_notes_export(path: str | Path, notes: list[dict[str, object]]) -> None
     )
 
 
+def read_notes_import(path: str | Path) -> list[dict[str, object]]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("notes"), list):
+        raise ValueError("Import file must contain a notes list")
+
+    notes: list[dict[str, object]] = []
+    for note in payload["notes"]:
+        if not isinstance(note, dict):
+            raise ValueError("Import notes must be objects")
+        notes.append(note)
+    return notes
+
+
 class RalphNotesApp(tk.Tk):
     def __init__(self, store: NotesStore) -> None:
         super().__init__()
@@ -227,6 +240,7 @@ class RalphNotesApp(tk.Tk):
         menu_bar = tk.Menu(self)
         file_menu = tk.Menu(menu_bar, tearoff=False)
         file_menu.add_command(label="Новая заметка", command=self.new_note)
+        file_menu.add_command(label="Импорт...", command=self.import_notes)
         file_menu.add_command(label="Экспорт...", command=self.export_notes)
         file_menu.add_separator()
         file_menu.add_command(label="Выход", command=self.on_close)
@@ -592,6 +606,33 @@ class RalphNotesApp(tk.Tk):
             return
 
         self.status_var.set(f"Экспортировано заметок: {len(notes)}")
+
+    def import_notes(self) -> None:
+        if not self._prepare_to_leave_current_note():
+            self.status_var.set("Импорт отменен")
+            return
+
+        import_path = filedialog.askopenfilename(
+            title="Импорт заметок",
+            filetypes=(("JSON", "*.json"), ("Все файлы", "*.*")),
+        )
+        if not import_path:
+            self.status_var.set("Импорт отменен")
+            return
+
+        try:
+            notes = read_notes_import(import_path)
+            result = self.store.import_notes(notes)
+        except Exception as error:
+            self.status_var.set(f"Ошибка импорта: {error}")
+            return
+
+        self.search_var.set("")
+        self.selected_tags.clear()
+        self.refresh_all()
+        self.status_var.set(
+            f"Импортировано: {result.added}; дубликатов пропущено: {result.skipped_duplicates}"
+        )
 
     def delete_current_note(self) -> None:
         if self.current_note_id is None:

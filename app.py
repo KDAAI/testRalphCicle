@@ -197,6 +197,17 @@ def delete_shortcut_allows_delete(focused_widget_class: str | None) -> bool:
     return focused_widget_class not in editing_widget_classes
 
 
+def format_filter_readouts(shown_count: int, search_text: str, selected_tags: list[str]) -> tuple[str, str]:
+    filters_active = bool(search_text.strip() or selected_tags)
+    count_label = "Найдено" if filters_active else "Заметок"
+    count_readout = f"{count_label}: {shown_count}"
+
+    if selected_tags:
+        selected = ", ".join(sorted(selected_tags, key=str.casefold))
+        return count_readout, f"Выбрано: {selected}"
+    return count_readout, "Все теги"
+
+
 class RalphNotesApp(tk.Tk):
     def __init__(self, store: NotesStore) -> None:
         super().__init__()
@@ -726,15 +737,13 @@ class RalphNotesApp(tk.Tk):
             self.edit_menu.entryconfig(self.delete_menu_index, state=state)
 
     def _update_filter_readouts(self, shown_count: int) -> None:
-        filters_active = bool(self.search_var.get().strip() or self.selected_tags)
-        count_label = "Найдено" if filters_active else "Заметок"
-        self.note_count_var.set(f"{count_label}: {shown_count}")
-
-        if self.selected_tags:
-            selected = ", ".join(sorted(self.selected_tags, key=str.casefold))
-            self.selected_filters_var.set(f"Выбрано: {selected}")
-        else:
-            self.selected_filters_var.set("Все теги")
+        count_readout, filters_readout = format_filter_readouts(
+            shown_count,
+            self.search_var.get(),
+            list(self.selected_tags),
+        )
+        self.note_count_var.set(count_readout)
+        self.selected_filters_var.set(filters_readout)
 
     def on_close(self) -> None:
         if not self._prepare_to_leave_current_note():

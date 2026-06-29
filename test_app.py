@@ -8,6 +8,7 @@ from app import (
     NewDraftGuard,
     delete_confirmation_for,
     delete_shortcut_allows_delete,
+    format_filter_readouts,
     format_note_list_label,
     read_notes_import,
     write_notes_export,
@@ -48,6 +49,24 @@ class AppFormattingTest(unittest.TestCase):
         self.assertNotEqual(pinned_title, regular_title)
         self.assertIn("Р·Р°РєСЂРµРїР»РµРЅРЅСѓСЋ", pinned_message)
         self.assertIn("Important", pinned_message)
+
+    def test_filter_readouts_show_total_count_without_filters(self) -> None:
+        count, filters = format_filter_readouts(3, "", [])
+
+        self.assertEqual(count, "Заметок: 3")
+        self.assertEqual(filters, "Все теги")
+
+    def test_filter_readouts_show_found_count_with_search_or_tags(self) -> None:
+        count, filters = format_filter_readouts(2, "plan", ["urgent", "work"])
+
+        self.assertEqual(count, "Найдено: 2")
+        self.assertEqual(filters, "Выбрано: urgent, work")
+
+    def test_filter_readouts_treat_search_text_as_active_filter(self) -> None:
+        count, filters = format_filter_readouts(1, "plan", [])
+
+        self.assertEqual(count, "Найдено: 1")
+        self.assertEqual(filters, "Все теги")
 
     def test_write_notes_export_writes_readable_json_payload(self) -> None:
         notes = [
